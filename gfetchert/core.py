@@ -5,13 +5,14 @@ Main module for Gfetchert.
 Provides tools to fetch daily CHIRPS rainfall data for any date range and location.
 """
 
+from dateutil import parser
 import os
 import gzip
 import shutil
 import requests
 import pandas as pd
 import rasterio
-from datetime import datetime, timedelta
+from datetime import timedelta
 from .geocode import get_coordinates
 
 
@@ -43,19 +44,19 @@ def get_rainfall(
     location : str, optional
         Place name to geocode into coordinates (uses geopy internally).
     start : str
-        Start date in 'YYYY-MM-DD' format.
+        Start date in any recognizable format (e.g. 'YYYY-MM-DD', 'DD/MM/YYYY').
     end : str, optional
-        End date in 'YYYY-MM-DD' format. If None, defaults to same as `start`.
+        End date. If None, defaults to same as `start`.
     download_dir : str, default='chirps_data'
         Directory to store downloaded CHIRPS .tif files.
 
     Returns
     -------
-    pandas.DataFrame
-        A DataFrame with columns:
-        - `date` : str, YYYY-MM-DD
-        - `rainfall_mm` : float or None
+    pandas.DataFrame or float
+        - If multiple days: DataFrame with columns `date` and `rainfall_mm`.
+        - If a single date: single rainfall value (float).
     """
+
     # ----------------------------------------------------------------
     # Input validation and coordinate resolution
     # ----------------------------------------------------------------
@@ -68,11 +69,12 @@ def get_rainfall(
     if end is None:
         end = start
 
+    # Smart date parsing
     try:
-        start_dt = datetime.strptime(start, "%Y-%m-%d")
-        end_dt = datetime.strptime(end, "%Y-%m-%d")
-    except ValueError:
-        raise ValueError("Dates must be in 'YYYY-MM-DD' format.")
+        start_dt = parser.parse(str(start))
+        end_dt = parser.parse(str(end))
+    except Exception:
+        raise ValueError(f"Unrecognized date format: {start} or {end}")
 
     if start_dt > end_dt:
         raise ValueError("Start date must not be after end date.")
@@ -103,11 +105,14 @@ def get_rainfall(
                     results.append({"date": current.strftime("%Y-%m-%d"), "rainfall_mm": None})
                     current += timedelta(days=1)
                     continue
+
                 with open(path_gz, "wb") as f:
                     f.write(r.content)
+
                 with gzip.open(path_gz, "rb") as fin, open(path_tif, "wb") as fout:
                     shutil.copyfileobj(fin, fout)
                 os.remove(path_gz)
+
             except Exception as e:
                 print(f"[Gfetchert] Download error for {url}: {e}")
                 results.append({"date": current.strftime("%Y-%m-%d"), "rainfall_mm": None})
@@ -117,14 +122,17 @@ def get_rainfall(
         # ------------------------------------------------------------
         # Extract rainfall value
         # ------------------------------------------------------------
+        rain = None
         try:
             with rasterio.open(path_tif) as src:
-                # safer and simpler than manual index
-                val = next(src.sample([(lon, lat)]))[0]
-                if val == src.nodata or val < 0 or val > 500:
+                try:
+                    val = next(src.sample([(lon, lat)]))[0]
+                    if val == src.nodata or val < 0 or val > 500:
+                        rain = None
+                    else:
+                        rain = float(val.item())
+                except StopIteration:
                     rain = None
-                else:
-                    rain = float(val)
         except Exception as e:
             print(f"[Gfetchert] Raster read error for {path_tif}: {e}")
             rain = None
@@ -133,6 +141,24 @@ def get_rainfall(
         current += timedelta(days=1)
 
     # ----------------------------------------------------------------
-    # Return as DataFrame
+    # Return as DataFrame (ensure correct column order)
     # ----------------------------------------------------------------
-    return pd.DataFrame(results)
+    df = pd.DataFrame(results)
+
+    # Enforce correct column order
+    if set(["date", "rainfall_mm"]).issubset(df.columns):
+        df = df[["date", "rainfall_mm"]]
+    else:
+        df["date"] = df.get("date")
+        df["rainfall_mm"] = df.get("rainfall_mm")
+        df = df[["date", "rainfall_mm"]]
+
+    # ----------------------------------------------------------------
+    # Smart return: if single record, return scalar rainfall value
+    # ----------------------------------------------------------------
+    if len(df) == 1:
+        value = df["rainfall_mm"].iloc[0]
+        print(f"[Gfetchert] Rainfall on {df['date'].iloc[0]}: {value} mm")
+        return value
+
+    return df

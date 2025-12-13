@@ -1,6 +1,9 @@
+🔧 Requirements
+nginx
+Copy code
 pandas
-numpy
-requests
 rasterio
-geopy
+requests
 tqdm
+python-dateutil
+tabula-py   # (optional )(only when you are using a pdf)
