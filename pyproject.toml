@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gfetchert"
+version = "0.1.0"
+description = "Fetch CHIRPS rainfall data easily for any date and location."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+  {name="Your Name", email="you@example.com"}
+]
+dependencies = [
+  "pandas",
+  "numpy",
+  "requests",
+  "rasterio",
+  "geopy",
+  "tqdm"
+]
+
+[project.urls]
+
+Dataset = "https://www.chc.ucsb.edu/data/chirps"
