@@ -9,8 +9,6 @@ from tqdm import tqdm
 from .core import get_rainfall
 
 
-
-
 def fetch_from_csv(
     csv_file: str,
     date_col: str = "date",
@@ -50,11 +48,19 @@ def fetch_from_csv(
     # Add rainfall column
     rainfall_values = []
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Fetching rainfall data"):
-        rain = get_rainfall(
-            float(row[lat_col]),
-            float(row[lon_col]),
-            str(row[date_col])
+        rain_df = get_rainfall(
+            lat=float(row[lat_col]),
+            lon=float(row[lon_col]),
+            start=str(row[date_col]),
+            end=str(row[date_col])
         )
+
+        # Extract rainfall value (if DataFrame returned)
+        if not rain_df.empty and "rainfall_mm" in rain_df.columns:
+            rain = rain_df["rainfall_mm"].iloc[0]
+        else:
+            rain = None
+
         rainfall_values.append(rain)
 
     df["rainfall_mm"] = rainfall_values
